@@ -118,5 +118,5 @@ def check_data_quality(csv_file):
     return issues_found
 
 if __name__ == "__main__":
-    csv_file = "model_data_mini_shaping.csv"
+    csv_file = "model_data_top10percent.csv"
     check_data_quality(csv_file) 

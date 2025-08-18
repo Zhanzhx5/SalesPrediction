@@ -37,7 +37,7 @@ def check_requirements():
 
 def check_data_file():
     """检查数据文件是否存在"""
-    data_file = 'model_data_mini_shaping.csv'
+    data_file = 'model_data_top10percent.csv'
     
     if not os.path.exists(data_file):
         print(f"❌ 数据文件不存在: {data_file}")
@@ -74,7 +74,7 @@ def main():
         from main_prediction_pipeline import SalesPredictionPipeline
         
         # 创建管道实例
-        pipeline = SalesPredictionPipeline('model_data_mini_shaping.csv')
+        pipeline = SalesPredictionPipeline('model_data_top10percent.csv')
         
         # 运行完整管道
         success = pipeline.run_complete_pipeline()

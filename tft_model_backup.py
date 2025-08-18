@@ -129,7 +129,10 @@ class TFTModel:
             'sseason', 'scolordesc', 'scomponet4', 'syear', 'scategorydesc', 'sstoredesc',
             'sdevelopment', 'qydz', 'ywqy', 'sprovince', 'scity', 'saddress', 'szone',
             'schanneltype', 'sstoresize', 'scitylevelid', 'sscmsalelevel', 'sscmarealevel',
-            'sscmtotallevel', 'is_bus', 'sleveltype', 'stimage', 'ssalelevel'
+            'sscmtotallevel', 'is_bus', 'sleveltype', 'stimage', 'ssalelevel',
+            # 新添加的10个商品属性列
+            'sbartype', 'scollar', 'scottoncupmaterial', 'secseries', 'smoldcupprocess',
+            'spattern', 'sshoulderpro', 'sshoulderwidth', 'ssteelwheel', 'swaistband'
         ]
         
         for col in all_categorical_feature_names:
@@ -175,7 +178,10 @@ class TFTModel:
             'sseason', 'scolordesc', 'scomponet4', 'syear', 'scategorydesc', 'sstoredesc',
             'sdevelopment', 'qydz', 'ywqy', 'sprovince', 'scity', 'saddress', 'szone',
             'schanneltype', 'sstoresize', 'scitylevelid', 'sscmsalelevel', 'sscmarealevel',
-            'sscmtotallevel', 'is_bus', 'sleveltype', 'stimage', 'ssalelevel'
+            'sscmtotallevel', 'is_bus', 'sleveltype', 'stimage', 'ssalelevel',
+            # 添加缺失的10个商品属性列
+            'sbartype', 'scollar', 'scottoncupmaterial', 'secseries', 'smoldcupprocess',
+            'spattern', 'sshoulderpro', 'sshoulderwidth', 'ssteelwheel', 'swaistband'
         ]
         
         # 根据您的澄清，VIP价和吊牌价是静态的
@@ -493,7 +499,7 @@ class TFTModel:
             val_prediction_df = pd.concat([val_prediction_df, temp_df])
         
         # 合并验证集真实值与预测值
-        val_actual_df = df[required_columns].copy()
+        val_actual_df = df[required_columns + ['sdeptname']].copy()
         val_evaluation_df = pd.merge(
             val_actual_df, 
             val_prediction_df, 
@@ -615,7 +621,7 @@ class TFTModel:
             test_prediction_df = pd.concat([test_prediction_df, temp_df])
         
         # 合并测试集真实值与预测值
-        test_actual_df = df[required_columns].copy()
+        test_actual_df = df[required_columns + ['sdeptname']].copy()
         test_evaluation_df = pd.merge(
             test_actual_df, 
             test_prediction_df, 
@@ -684,7 +690,7 @@ class TFTModel:
         print(f"✅ 测试集评估完成 - 按天WAPE: {results['test']['daily_wape']:.4f}, 按月WAPE: {results['test']['monthly_wape']:.4f}")
         
         # 持久化保存TFT测试集详细预测结果
-        cols_to_save = ['store_id', 'item_id', 'sales', 'dtdate', 'time_idx', 'prediction']
+        cols_to_save = ['store_id', 'item_id', 'sales', 'dtdate', 'time_idx', 'prediction', 'sdeptname']
         test_evaluation_df[cols_to_save].to_csv('tft_test_predictions.csv', index=False)
         print("✅ 已保存TFT测试集详细预测结果到 tft_test_predictions.csv")
 

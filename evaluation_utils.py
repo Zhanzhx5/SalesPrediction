@@ -269,31 +269,31 @@ def create_evaluation_visualization(baseline_results, tft_results, save_path='ev
     if ('test' in tft_results and 'detailed_predictions' in tft_results['test'] and 
         'test' in baseline_results and 'detailed_predictions' in baseline_results['test']):
         
-        def prepare_nonzero_item_store_wape(series_df, model_label):
+        def prepare_nonzero_sdeptname_wape(series_df, model_label):
             df_ = series_df.copy()
             df_ = df_[df_['sales'] > 0]
             if len(df_) == 0:
                 return pd.DataFrame({'模型': [], 'WAPE': []})
-            grouped = df_.groupby(['store_id', 'item_id'], as_index=False).agg({'sales': 'sum', 'prediction': 'sum'})
+            grouped = df_.groupby('sdeptname', as_index=False).agg({'sales': 'sum', 'prediction': 'sum'})
             grouped = grouped[grouped['sales'] > 0]
             grouped['wape'] = (grouped['sales'] - grouped['prediction']).abs() / grouped['sales']
             grouped = grouped.replace([np.inf, -np.inf], np.nan).dropna(subset=['wape'])
             grouped = grouped[grouped['wape'] <= 10]
             return pd.DataFrame({'模型': model_label, 'WAPE': grouped['wape'].astype(float)})
         
-        nonzero_wape_baseline = prepare_nonzero_item_store_wape(baseline_results['test']['detailed_predictions'], 'Baseline')
-        nonzero_wape_tft = prepare_nonzero_item_store_wape(tft_results['test']['detailed_predictions'], 'TFT')
+        nonzero_wape_baseline = prepare_nonzero_sdeptname_wape(baseline_results['test']['detailed_predictions'], 'Baseline')
+        nonzero_wape_tft = prepare_nonzero_sdeptname_wape(tft_results['test']['detailed_predictions'], 'TFT')
         nonzero_wape_long = pd.concat([nonzero_wape_baseline, nonzero_wape_tft], ignore_index=True)
         
         if len(nonzero_wape_long) > 0:
             sns.boxplot(data=nonzero_wape_long, x='模型', y='WAPE', ax=axes[2, 2], width=0.6, showfliers=True)
             sns.stripplot(data=nonzero_wape_long, x='模型', y='WAPE', ax=axes[2, 2], color='black', alpha=0.4, size=2.5, jitter=0.2)
-            axes[2, 2].set_title('非零销量WAPE分布箱线图 (按月)')
+            axes[2, 2].set_title('非零销量WAPE分布箱线图 (按大类)')
             axes[2, 2].set_ylabel('WAPE')
             axes[2, 2].grid(True, alpha=0.3)
         else:
             axes[2, 2].text(0.5, 0.5, '无有效非零WAPE数据', ha='center', va='center', transform=axes[2, 2].transAxes)
-            axes[2, 2].set_title('非零销量WAPE分布箱线图 (按月)')
+            axes[2, 2].set_title('非零销量WAPE分布箱线图 (按大类)')
     
     plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches='tight')

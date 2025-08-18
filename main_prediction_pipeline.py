@@ -23,7 +23,7 @@ from evaluation_utils import create_evaluation_visualization, print_evaluation_s
 class SalesPredictionPipeline:
     """销量预测自动化管道"""
     
-    def __init__(self, data_file='model_data_mini_shaping.csv'):
+    def __init__(self, data_file='model_data_top10percent.csv'):
         """
         初始化预测管道
         
@@ -217,7 +217,7 @@ def main():
     print("🚀 销量预测项目 - 主预测管道")
     
     # 创建管道实例
-    pipeline = SalesPredictionPipeline('model_data_mini_shaping.csv')
+    pipeline = SalesPredictionPipeline('model_data_top10percent.csv')
     
     # 运行完整管道
     success = pipeline.run_complete_pipeline()

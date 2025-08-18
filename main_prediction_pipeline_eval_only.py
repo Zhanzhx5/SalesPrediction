@@ -17,7 +17,7 @@ from evaluation_utils import create_evaluation_visualization, print_evaluation_s
 
 class SalesPredictionEvalOnlyPipeline:
     """销量预测自动化管道（仅评估TFT，不重新训练）"""
-    def __init__(self, data_file='model_data_mini_shaping.csv'):
+    def __init__(self, data_file='model_data_top10percent.csv'):
         self.data_file = data_file
         self.df = None
         self.train_mask = None
@@ -167,7 +167,7 @@ class SalesPredictionEvalOnlyPipeline:
 
 def main():
     print("🚀 销量预测项目 - 仅评估主预测管道")
-    pipeline = SalesPredictionEvalOnlyPipeline('model_data_mini_shaping.csv')
+    pipeline = SalesPredictionEvalOnlyPipeline('model_data_top10percent.csv')
     success = pipeline.run_eval_only_pipeline()
     if success:
         print("\n🎊 项目成功完成！")

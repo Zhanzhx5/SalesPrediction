@@ -13,7 +13,7 @@ from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
 
-def load_and_analyze_data(file_path='model_data_mini_shaping.csv'):
+def load_and_analyze_data(file_path='model_data_top10percent.csv'):
     """
     加载和分析数据，返回处理后的数据框和数据集划分掩码
     

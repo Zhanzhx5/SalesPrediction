@@ -173,7 +173,7 @@ def evaluate_baseline_model(model, df, val_mask, test_mask):
             'monthly_record_count': len(val_monthly_actual),
             
             # 详细预测数据
-            'detailed_predictions': val_df[['store_id', 'item_id', 'sales', 'dtdate', 'prediction']]
+            'detailed_predictions': val_df[['store_id', 'item_id', 'sales', 'dtdate', 'prediction', 'sdeptname']]
         }
         
         print(f"✅ 验证集评估完成 - 按天WAPE: {results['validation']['daily_wape']:.4f}, 按月WAPE: {results['validation']['monthly_wape']:.4f}")
@@ -206,7 +206,7 @@ def evaluate_baseline_model(model, df, val_mask, test_mask):
         test_monthly_non_zero_wape = calculate_wape(test_monthly_actual[test_monthly_non_zero_mask], test_monthly_pred[test_monthly_non_zero_mask]) if test_monthly_non_zero_mask.sum() > 0 else 0
         
         # 创建详细的预测数据DataFrame
-        test_detailed_df = test_df[['store_id', 'item_id', 'sales', 'dtdate', 'prediction']].copy()
+        test_detailed_df = test_df[['store_id', 'item_id', 'sales', 'dtdate', 'prediction', 'sdeptname']].copy()
         
         results['test'] = {
             # 按天指标

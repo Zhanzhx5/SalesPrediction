@@ -192,7 +192,7 @@ def run_study(
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Optuna 超参数搜索 - TFTModel")
-    parser.add_argument("--data_file", type=str, default="model_data_mini_shaping.csv", help="数据文件路径")
+    parser.add_argument("--data_file", type=str, default="model_data_top10percent.csv", help="数据文件路径")
     parser.add_argument("--n_trials", type=int, default=20, help="搜索轮数（<=0 表示不限）")
     parser.add_argument("--timeout", type=int, default=0, help="搜索超时（秒，0 表示不限）")
     parser.add_argument("--study_name", type=str, default="tft_hyperparam_opt", help="Study 名称")
