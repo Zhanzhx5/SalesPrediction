@@ -43,12 +43,12 @@ class TFTModel:
     def __init__(self, 
                  prediction_length=30,
                  encoder_length=90,
-                 learning_rate=0.0001,
+                 learning_rate=0.00005,
                  hidden_size=64,
                  attention_head_size=8,
                  dropout=0.2,
                  hidden_continuous_size=32,
-                 batch_size=256,
+                 batch_size=1024,
                  max_epochs=30,
                  patience=5,
                  random_seed=42,
@@ -265,7 +265,8 @@ class TFTModel:
                 )
             },
 
-            allow_missing_timesteps=True
+            allow_missing_timesteps=True,
+            add_relative_time_idx=True
         )
         
         # 创建验证数据集 (只预测5月份，用于训练时的验证)
@@ -283,7 +284,8 @@ class TFTModel:
             predict=True, 
             stop_randomization=True,
             min_prediction_idx=val_encoder_cutoff_idx + 1,  # 从5月1日开始预测
-            min_encoder_length=0  # 显式设置min_encoder_length=0
+            min_encoder_length=0,  # 显式设置min_encoder_length=0
+            add_relative_time_idx=True
         )
         
         print(f"✅ TimeSeriesDataSet创建完成")
@@ -584,7 +586,8 @@ class TFTModel:
             predict=True,
             stop_randomization=True,
             min_prediction_idx=test_encoder_cutoff_idx + 1,
-            min_encoder_length=0  # 显式设置min_encoder_length=0
+            min_encoder_length=0,  # 显式设置min_encoder_length=0
+            add_relative_time_idx=True
         )
         
         # 创建测试集的dataloader
@@ -742,12 +745,12 @@ if __name__ == "__main__":
     tft_model = TFTModel(
         prediction_length=30,
         encoder_length=90,
-        learning_rate=0.0001,
+        learning_rate=0.00005,
         hidden_size=64,
         attention_head_size=8,
         dropout=0.2,
         hidden_continuous_size=32,
-        batch_size=256,
+        batch_size=1024,
         max_epochs=30,  
         patience=5
     )

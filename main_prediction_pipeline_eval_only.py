@@ -73,12 +73,12 @@ class SalesPredictionEvalOnlyPipeline:
             self.tft_model = TFTModel(
                 prediction_length=30,
                 encoder_length=90,
-                learning_rate=0.0001,
+                learning_rate=0.00005,
                 hidden_size=64,
                 attention_head_size=8,
                 dropout=0.2,
                 hidden_continuous_size=32,
-                batch_size=256,  # 减小batch_size避免NaN
+                batch_size=1024,  # 减小batch_size避免NaN
                 max_epochs=30,  
                 patience=5,
                 random_seed=42
