@@ -102,7 +102,7 @@ class SalesPredictionPipeline:
             self.tft_model = TFTModel(
                 prediction_length=30,
                 encoder_length=90,
-                learning_rate=0.00005,
+                learning_rate=0.0002,
                 hidden_size=64,
                 attention_head_size=8,
                 dropout=0.2,

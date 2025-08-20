@@ -15,6 +15,7 @@ from pytorch_forecasting import TimeSeriesDataSet, TemporalFusionTransformer, Na
 from pytorch_forecasting.metrics import NegativeBinomialDistributionLoss, PoissonLoss
 from pytorch_forecasting.data.encoders import TorchNormalizer
 from baseline_model import calculate_wape, calculate_mae, calculate_rmse
+from pytorch_lightning.strategies import DDPSpawnStrategy
 import warnings
 import random
 warnings.filterwarnings('ignore')
@@ -43,7 +44,7 @@ class TFTModel:
     def __init__(self, 
                  prediction_length=30,
                  encoder_length=90,
-                 learning_rate=0.00005,
+                 learning_rate=0.0002,
                  hidden_size=64,
                  attention_head_size=8,
                  dropout=0.2,
@@ -81,8 +82,15 @@ class TFTModel:
         self.random_seed = random_seed
         self.optuna_pruning_callback = optuna_pruning_callback
         
-        # 设置随机种子
-        set_random_seed(self.random_seed)
+        # 设置基础随机种子（不触发多进程）
+        random.seed(self.random_seed)
+        np.random.seed(self.random_seed)
+        torch.manual_seed(self.random_seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(self.random_seed)
+            torch.cuda.manual_seed_all(self.random_seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
         
         # 模型和数据集
         self.model = None
@@ -321,12 +329,29 @@ class TFTModel:
         """
         print("🔧 步骤5: 训练TFT模型")
         
+        # 在训练开始时设置PyTorch Lightning的随机种子（会触发多进程）
+        pl.seed_everything(self.random_seed, workers=True)
+
+        # Optional: 利用 Tensor Cores，加速 matmul
+        try:
+            torch.set_float32_matmul_precision('medium')  # or 'high'
+        except Exception:
+            pass
+        
         # 创建DataLoader
         train_dataloader = self.training_dataset.to_dataloader(
-            train=True, batch_size=self.batch_size, num_workers=4
+            train=True,
+            batch_size=self.batch_size,
+            num_workers=4,
+            persistent_workers=True,
+            pin_memory=True,
         )
         val_dataloader = self.validation_dataset.to_dataloader(
-            train=False, batch_size=self.batch_size * 2, num_workers=4
+            train=False,
+            batch_size=self.batch_size * 2,
+            num_workers=4,
+            persistent_workers=True,
+            pin_memory=True,
         )
         
         # 早停回调
@@ -349,23 +374,23 @@ class TFTModel:
         from pytorch_lightning.loggers import TensorBoardLogger
         logger = TensorBoardLogger("lightning_logs", name="sales_forecasting_tft")
         
-        # 2. 检查GPU并显式选择GPU 1
+        # 2. 检查GPU并自动使用所有可用GPU
         if torch.cuda.is_available():
             accelerator_config = 'gpu'
-            devices_config = [1]  # 显式选择 GPU 1
-            
-            # 检查 GPU 1 是否存在
             gpu_count = torch.cuda.device_count()
             if gpu_count > 1:
-                print(f"✅ 检测到 {gpu_count} 个GPU，显式选择 GPU 1 进行训练")
-                torch.cuda.set_device(1)
+                # 多GPU：使用 DDPSpawnStrategy 并关闭 find_unused_parameters 以避免性能开销警告
+                devices_config = "auto"  # 使用所有可用GPU
+                strategy_config = DDPSpawnStrategy(find_unused_parameters=False)
+                print(f"✅ 检测到 {gpu_count} 个GPU，启用多GPU训练")
             else:
-                print(f"⚠️ 只检测到 {gpu_count} 个GPU，将使用 GPU 0")
                 devices_config = [0]
-                torch.cuda.set_device(0)
+                strategy_config = None
+                print(f"🖥️ 使用单GPU训练")
         else:
             accelerator_config = 'cpu'
             devices_config = 'auto'
+            strategy_config = None
             print("⚠️ 未检测到可用GPU，将使用CPU进行训练。")
 
         # 3. 创建训练器 (使用兼容最新版的参数)
@@ -375,14 +400,14 @@ class TFTModel:
 
         self.trainer = pl.Trainer(
             max_epochs=self.max_epochs,
-            accelerator=accelerator_config,         # (修正1) 使用 'accelerator' 替代 'gpus'
-            devices=devices_config,                 # (修正1) 使用 'devices' 替代 'gpus'
-            # weights_summary="top",                # (修正2) 移除 'weights_summary' 参数
-            gradient_clip_algorithm="norm",         # (修正3) 新增梯度裁剪算法参数
-            gradient_clip_val=0.1,                  # (修正3) 'gradient_clip_val' 需与上一行配合使用
+            accelerator=accelerator_config,
+            devices=devices_config,
+            strategy=strategy_config,
+            gradient_clip_algorithm="norm",
+            gradient_clip_val=0.1,
             callbacks=callbacks_list,
             enable_progress_bar=True,
-            logger=logger,                          # 使用显式创建的logger
+            logger=logger,
         )
         
         # 训练模型
@@ -745,7 +770,7 @@ if __name__ == "__main__":
     tft_model = TFTModel(
         prediction_length=30,
         encoder_length=90,
-        learning_rate=0.00005,
+        learning_rate=0.0002,
         hidden_size=64,
         attention_head_size=8,
         dropout=0.2,
