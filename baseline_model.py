@@ -79,9 +79,48 @@ class BaselineModel:
             on=['store_id', 'item_id', 'month', 'day'],
             how='left'
         )
-        
-        # 基线预测：使用同期平均销量×120%，如果没有则使用0
-        baseline_pred = merged['sales_mean'].fillna(0) 
+
+        # 如果没有历史同期，则使用近3个月同日的平均值
+        # 计算前1/2/3个月
+        pred_data = merged.copy()
+        pred_data['prev1_month'] = ((pred_data['month'] - 2) % 12) + 1
+        pred_data['prev2_month'] = ((pred_data['month'] - 3) % 12) + 1
+        pred_data['prev3_month'] = ((pred_data['month'] - 4) % 12) + 1
+
+        # 为前1个月合并均值
+        tmp1 = self.historical_data[['store_id', 'item_id', 'month', 'day', 'sales_mean']].copy()
+        tmp1.columns = ['store_id', 'item_id', 'prev1_month', 'day', 'sales_mean_prev1']
+        pred_data = pred_data.merge(
+            tmp1,
+            on=['store_id', 'item_id', 'prev1_month', 'day'],
+            how='left'
+        )
+
+        # 为前2个月合并均值
+        tmp2 = self.historical_data[['store_id', 'item_id', 'month', 'day', 'sales_mean']].copy()
+        tmp2.columns = ['store_id', 'item_id', 'prev2_month', 'day', 'sales_mean_prev2']
+        pred_data = pred_data.merge(
+            tmp2,
+            on=['store_id', 'item_id', 'prev2_month', 'day'],
+            how='left'
+        )
+
+        # 为前3个月合并均值
+        tmp3 = self.historical_data[['store_id', 'item_id', 'month', 'day', 'sales_mean']].copy()
+        tmp3.columns = ['store_id', 'item_id', 'prev3_month', 'day', 'sales_mean_prev3']
+        pred_data = pred_data.merge(
+            tmp3,
+            on=['store_id', 'item_id', 'prev3_month', 'day'],
+            how='left'
+        )
+
+        # 计算回退均值（忽略缺失）
+        fallback_mean = pred_data[[
+            'sales_mean_prev1', 'sales_mean_prev2', 'sales_mean_prev3'
+        ]].mean(axis=1, skipna=True)
+
+        # 基线预测：历史同期均值和近3个月同日均值都乘以110%涨幅；若都缺失则置0
+        baseline_pred = (pred_data['sales_mean'] * 1.1).fillna(fallback_mean * 1.1).fillna(0)
         
         print(f"✅ 基线预测完成，预测数据: {len(baseline_pred)} 条")
         return baseline_pred.values
