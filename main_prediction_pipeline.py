@@ -109,7 +109,7 @@ class SalesPredictionPipeline:
                 hidden_continuous_size=32,
                 batch_size=1024,  # 减小batch_size避免NaN
                 max_epochs=30,   
-                patience=5,
+                patience=8,
                 random_seed=42
             )
             

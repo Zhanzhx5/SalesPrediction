@@ -80,7 +80,7 @@ class SalesPredictionEvalOnlyPipeline:
                 hidden_continuous_size=32,
                 batch_size=1024,  # 减小batch_size避免NaN
                 max_epochs=30,  
-                patience=5,
+                patience=8,
                 random_seed=42
             )
             # 跳过fit和train，直接加载数据和dataset

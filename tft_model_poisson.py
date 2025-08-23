@@ -12,9 +12,10 @@ import numpy as np
 import torch
 import pytorch_lightning as pl
 from pytorch_forecasting import TimeSeriesDataSet, TemporalFusionTransformer, NaNLabelEncoder
-from pytorch_forecasting.metrics import NegativeBinomialDistributionLoss
+from pytorch_forecasting.metrics import NegativeBinomialDistributionLoss, PoissonLoss
 from pytorch_forecasting.data.encoders import TorchNormalizer
 from baseline_model import calculate_wape, calculate_mae, calculate_rmse
+from pytorch_lightning.strategies import DDPSpawnStrategy
 import warnings
 import random
 warnings.filterwarnings('ignore')
@@ -43,14 +44,14 @@ class TFTModel:
     def __init__(self, 
                  prediction_length=30,
                  encoder_length=90,
-                 learning_rate=0.0001,
-                 hidden_size=32,
+                 learning_rate=0.0002,
+                 hidden_size=64,
                  attention_head_size=8,
-                 dropout=0.3,
-                 hidden_continuous_size=16,
-                 batch_size=64,
+                 dropout=0.2,
+                 hidden_continuous_size=32,
+                 batch_size=1024,
                  max_epochs=30,
-                 patience=3,
+                 patience=5,
                  random_seed=42,
                  optuna_pruning_callback=None):
         """
@@ -81,8 +82,15 @@ class TFTModel:
         self.random_seed = random_seed
         self.optuna_pruning_callback = optuna_pruning_callback
         
-        # 设置随机种子
-        set_random_seed(self.random_seed)
+        # 设置基础随机种子（不触发多进程）
+        random.seed(self.random_seed)
+        np.random.seed(self.random_seed)
+        torch.manual_seed(self.random_seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(self.random_seed)
+            torch.cuda.manual_seed_all(self.random_seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
         
         # 模型和数据集
         self.model = None
@@ -265,7 +273,8 @@ class TFTModel:
                 )
             },
 
-            allow_missing_timesteps=True
+            allow_missing_timesteps=True,
+            add_relative_time_idx=True
         )
         
         # 创建验证数据集 (只预测5月份，用于训练时的验证)
@@ -283,7 +292,8 @@ class TFTModel:
             predict=True, 
             stop_randomization=True,
             min_prediction_idx=val_encoder_cutoff_idx + 1,  # 从5月1日开始预测
-            min_encoder_length=0  # 显式设置min_encoder_length=0
+            min_encoder_length=0,  # 显式设置min_encoder_length=0
+            add_relative_time_idx=True
         )
         
         print(f"✅ TimeSeriesDataSet创建完成")
@@ -305,8 +315,8 @@ class TFTModel:
             attention_head_size=self.attention_head_size,
             dropout=self.dropout,
             hidden_continuous_size=self.hidden_continuous_size,
-            output_size=2,  # NegativeBinomial 需要 2 个参数
-            loss=NegativeBinomialDistributionLoss(),
+            output_size=1,  # Poisson 只需要 1 个参数
+            loss=PoissonLoss(),
             log_interval=10,
             reduce_on_plateau_patience=4,
         )
@@ -319,12 +329,29 @@ class TFTModel:
         """
         print("🔧 步骤5: 训练TFT模型")
         
+        # 在训练开始时设置PyTorch Lightning的随机种子（会触发多进程）
+        pl.seed_everything(self.random_seed, workers=True)
+
+        # Optional: 利用 Tensor Cores，加速 matmul
+        try:
+            torch.set_float32_matmul_precision('medium')  # or 'high'
+        except Exception:
+            pass
+        
         # 创建DataLoader
         train_dataloader = self.training_dataset.to_dataloader(
-            train=True, batch_size=self.batch_size, num_workers=4
+            train=True,
+            batch_size=self.batch_size,
+            num_workers=4,
+            persistent_workers=True,
+            pin_memory=True,
         )
         val_dataloader = self.validation_dataset.to_dataloader(
-            train=False, batch_size=self.batch_size * 2, num_workers=4
+            train=False,
+            batch_size=self.batch_size * 2,
+            num_workers=4,
+            persistent_workers=True,
+            pin_memory=True,
         )
         
         # 早停回调
@@ -347,23 +374,23 @@ class TFTModel:
         from pytorch_lightning.loggers import TensorBoardLogger
         logger = TensorBoardLogger("lightning_logs", name="sales_forecasting_tft")
         
-        # 2. 检查GPU并显式选择GPU 1
+        # 2. 检查GPU并自动使用所有可用GPU
         if torch.cuda.is_available():
             accelerator_config = 'gpu'
-            devices_config = [1]  # 显式选择 GPU 1
-            
-            # 检查 GPU 1 是否存在
             gpu_count = torch.cuda.device_count()
             if gpu_count > 1:
-                print(f"✅ 检测到 {gpu_count} 个GPU，显式选择 GPU 1 进行训练")
-                torch.cuda.set_device(1)
+                # 多GPU：使用 DDPSpawnStrategy 并关闭 find_unused_parameters 以避免性能开销警告
+                devices_config = "auto"  # 使用所有可用GPU
+                strategy_config = DDPSpawnStrategy(find_unused_parameters=False)
+                print(f"✅ 检测到 {gpu_count} 个GPU，启用多GPU训练")
             else:
-                print(f"⚠️ 只检测到 {gpu_count} 个GPU，将使用 GPU 0")
                 devices_config = [0]
-                torch.cuda.set_device(0)
+                strategy_config = None
+                print(f"🖥️ 使用单GPU训练")
         else:
             accelerator_config = 'cpu'
             devices_config = 'auto'
+            strategy_config = None
             print("⚠️ 未检测到可用GPU，将使用CPU进行训练。")
 
         # 3. 创建训练器 (使用兼容最新版的参数)
@@ -373,14 +400,14 @@ class TFTModel:
 
         self.trainer = pl.Trainer(
             max_epochs=self.max_epochs,
-            accelerator=accelerator_config,         # (修正1) 使用 'accelerator' 替代 'gpus'
-            devices=devices_config,                 # (修正1) 使用 'devices' 替代 'gpus'
-            # weights_summary="top",                # (修正2) 移除 'weights_summary' 参数
-            gradient_clip_algorithm="norm",         # (修正3) 新增梯度裁剪算法参数
-            gradient_clip_val=0.1,                  # (修正3) 'gradient_clip_val' 需与上一行配合使用
+            accelerator=accelerator_config,
+            devices=devices_config,
+            strategy=strategy_config,
+            gradient_clip_algorithm="norm",
+            gradient_clip_val=0.1,
             callbacks=callbacks_list,
             enable_progress_bar=True,
-            logger=logger,                          # 使用显式创建的logger
+            logger=logger,
         )
         
         # 训练模型
@@ -479,14 +506,17 @@ class TFTModel:
         if isinstance(val_param_tensor, torch.Tensor):
             val_param_tensor = val_param_tensor.cpu()
 
-        # 基于负二项分布参数进行采样，得到计数型样本（目标采用 identity，无需逆变换）
-        # 在 pytorch-forecasting 0.10.3 中，使用 map_x_to_distribution 获取分布实例
-        val_distribution = best_tft.loss.map_x_to_distribution(val_param_tensor)
-        val_samples_tensor = val_distribution.sample()
+        # 基于泊松分布参数进行采样，得到计数型样本（目标采用 identity，无需逆变换）
+        # 1. 首先，应用激活函数将原始输出(logits)转换为非负的率参数(rate)
+        #    这与训练时PoissonLoss内部的操作一致
+        positive_rate_tensor = torch.exp(val_param_tensor)
+        
+        # 2. 然后，使用转换后的正率参数进行泊松采样
+        val_samples_tensor = torch.poisson(positive_rate_tensor)
         val_samples_np = val_samples_tensor.detach().cpu().numpy()
 
         # 非负裁剪 + 0.1 阈值置零（保证与业务规则一致）
-        # 注：负二项采样理论上输出非负整数，但保留阈值以防未来切换为连续预测
+        # 注：泊松采样理论上输出非负整数，但保留阈值以防未来切换为连续预测
         val_predictions_non_negative = np.maximum(0, val_samples_np)
         val_final_predictions = np.where(val_predictions_non_negative < 0.1, 0, val_predictions_non_negative)
         
@@ -581,7 +611,8 @@ class TFTModel:
             predict=True,
             stop_randomization=True,
             min_prediction_idx=test_encoder_cutoff_idx + 1,
-            min_encoder_length=0  # 显式设置min_encoder_length=0
+            min_encoder_length=0,  # 显式设置min_encoder_length=0
+            add_relative_time_idx=True
         )
         
         # 创建测试集的dataloader
@@ -601,14 +632,16 @@ class TFTModel:
         if isinstance(test_param_tensor, torch.Tensor):
             test_param_tensor = test_param_tensor.cpu()
 
-        # 基于负二项分布参数进行采样，得到计数型样本（目标采用 identity，无需逆变换）
-        # 在 pytorch-forecasting 0.10.3 中，使用 map_x_to_distribution 获取分布实例
-        test_distribution = best_tft.loss.map_x_to_distribution(test_param_tensor)
-        test_samples_tensor = test_distribution.sample()
+        # 基于泊松分布参数进行采样，得到计数型样本（目标采用 identity，无需逆变换）
+        # 1. 同样地，对测试集的原始输出应用激活函数
+        positive_rate_tensor_test = torch.exp(test_param_tensor)
+        
+        # 2. 使用转换后的正率参数进行采样
+        test_samples_tensor = torch.poisson(positive_rate_tensor_test)
         test_samples_np = test_samples_tensor.detach().cpu().numpy()
 
         # 非负裁剪 + 0.1 阈值置零
-        # 注：负二项采样理论上输出非负整数，但保留阈值以防未来切换为连续预测
+        # 注：泊松采样理论上输出非负整数，但保留阈值以防未来切换为连续预测
         test_predictions_non_negative = np.maximum(0, test_samples_np)
         test_final_predictions = np.where(test_predictions_non_negative < 0.1, 0, test_predictions_non_negative)
         
@@ -737,21 +770,21 @@ if __name__ == "__main__":
     tft_model = TFTModel(
         prediction_length=30,
         encoder_length=90,
-        learning_rate=0.0001,
-        hidden_size=32,
+        learning_rate=0.0002,
+        hidden_size=64,
         attention_head_size=8,
-        dropout=0.3,
-        hidden_continuous_size=16,
-        batch_size=64,
+        dropout=0.2,
+        hidden_continuous_size=32,
+        batch_size=1024,
         max_epochs=30,  
-        patience=3
+        patience=5
     )
     
     # 训练模型
-    model = tft_model.fit('model_data_mini_shaping.csv')
+    model = tft_model.fit('model_data_top10percent.csv')
     
     # 获取预处理后的数据用于评估
-    df = tft_model.load_and_preprocess_data('model_data_mini_shaping.csv')
+    df = tft_model.load_and_preprocess_data('model_data_top10percent.csv')
     
     # 评估模型
     results = tft_model.predict_and_evaluate(df)
