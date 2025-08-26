@@ -44,15 +44,16 @@ class TFTModel:
     def __init__(self, 
                  prediction_length=30,
                  encoder_length=90,
-                 learning_rate=0.0002,
+                 learning_rate=0.00008,
                  hidden_size=64,
                  attention_head_size=8,
-                 dropout=0.2,
+                 dropout=0.25,
                  hidden_continuous_size=32,
                  batch_size=1024,
                  max_epochs=30,
                  patience=5,
                  random_seed=42,
+                 weight_decay=1e-5,
                  optuna_pruning_callback=None):
         """
         初始化TFT模型
@@ -68,6 +69,7 @@ class TFTModel:
             batch_size: 批次大小
             max_epochs: 最大训练轮数
             patience: 早停耐心值
+            weight_decay: L2正则化系数
         """
         self.prediction_length = prediction_length
         self.encoder_length = encoder_length
@@ -80,6 +82,7 @@ class TFTModel:
         self.max_epochs = max_epochs
         self.patience = patience
         self.random_seed = random_seed
+        self.weight_decay = weight_decay
         self.optuna_pruning_callback = optuna_pruning_callback
         
         # 设置基础随机种子（不触发多进程）
@@ -319,6 +322,7 @@ class TFTModel:
             loss=PoissonLoss(),
             log_interval=10,
             reduce_on_plateau_patience=4,
+            weight_decay=self.weight_decay,
         )
         
         print("✅ TFT模型创建完成")
@@ -770,14 +774,15 @@ if __name__ == "__main__":
     tft_model = TFTModel(
         prediction_length=30,
         encoder_length=90,
-        learning_rate=0.0002,
+        learning_rate=0.00008,
         hidden_size=64,
         attention_head_size=8,
-        dropout=0.2,
+        dropout=0.25,
         hidden_continuous_size=32,
         batch_size=1024,
         max_epochs=30,  
-        patience=5
+        patience=5,
+        weight_decay=1e-5,  # <--- 新增此项
     )
     
     # 训练模型

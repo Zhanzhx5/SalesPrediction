@@ -301,6 +301,140 @@ def create_evaluation_visualization(baseline_results, tft_results, save_path='ev
     
     print(f"📊 评估对比图已保存: {save_path}")
 
+def create_store_daily_comparison_plots(baseline_results, tft_results, save_dir='.'):
+    """
+    创建按店铺的测试集每日销量对比图
+    
+    Args:
+        baseline_results: 基线模型结果
+        tft_results: TFT模型结果
+        save_dir: 保存目录
+    """
+    plt.rcParams['font.sans-serif']=['WenQuanYi Micro Hei']
+    plt.rcParams['axes.unicode_minus']=False
+    
+    # 检查是否有测试集数据
+    if ('test' not in tft_results or 'detailed_predictions' not in tft_results['test'] or 
+        'test' not in baseline_results or 'detailed_predictions' not in baseline_results['test']):
+        print("⚠️ 缺少测试集详细预测数据，跳过店铺对比图生成")
+        return
+    
+    tft_test_df = tft_results['test']['detailed_predictions']
+    baseline_test_df = baseline_results['test']['detailed_predictions']
+    
+    # 确保dtdate是datetime类型
+    tft_test_df['dtdate'] = pd.to_datetime(tft_test_df['dtdate'])
+    baseline_test_df['dtdate'] = pd.to_datetime(baseline_test_df['dtdate'])
+    
+    # 计算每个店铺的按月WAPE（TFT预测 vs 实际值）
+    print("📊 计算每个店铺的按月WAPE...")
+    store_wape_data = []
+    
+    for store_id in tft_test_df['store_id'].unique():
+        # 获取该店铺的数据
+        tft_store_data = tft_test_df[tft_test_df['store_id'] == store_id]
+        
+        if len(tft_store_data) == 0:
+            continue
+            
+        # 按月聚合数据 - 按照标准逻辑：按店铺-商品-月份分组
+        tft_store_data['year_month'] = tft_store_data['dtdate'].dt.to_period('M')
+        
+        tft_monthly = tft_store_data.groupby(['store_id', 'item_id', 'year_month']).agg({
+            'sales': 'sum',
+            'prediction': 'sum'
+        }).reset_index()
+        
+        # 计算按月WAPE（TFT预测 vs 实际值）
+        actual = tft_monthly['sales'].values
+        predicted = tft_monthly['prediction'].values
+        
+        if np.sum(np.abs(actual)) > 0:
+            wape = np.sum(np.abs(actual - predicted)) / np.sum(np.abs(actual))
+        else:
+            wape = 0.0
+            
+        store_wape_data.append({
+            'store_id': store_id,
+            'monthly_wape': wape
+        })
+    
+    # 按WAPE升序排序
+    store_wape_df = pd.DataFrame(store_wape_data)
+    store_wape_df = store_wape_df.sort_values('monthly_wape')
+    sorted_stores = store_wape_df['store_id'].tolist()
+    
+    print(f"📊 开始生成店铺对比图，共 {len(sorted_stores)} 家店铺，按WAPE升序排列")
+    
+    # 每张图25个店铺，计算需要多少张图
+    stores_per_figure = 25
+    num_figures = (len(sorted_stores) + stores_per_figure - 1) // stores_per_figure
+    
+    for fig_idx in range(num_figures):
+        start_idx = fig_idx * stores_per_figure
+        end_idx = min(start_idx + stores_per_figure, len(sorted_stores))
+        current_stores = sorted_stores[start_idx:end_idx]
+        
+        # 创建5x5的子图
+        fig, axes = plt.subplots(5, 5, figsize=(25, 25))
+        fig.suptitle(f'TEST集每日销量对比图-第{fig_idx+1}组', fontsize=16, fontweight='bold')
+        
+        # 将axes展平为一维数组
+        axes_flat = axes.flatten()
+        
+        for i, store_id in enumerate(current_stores):
+            ax = axes_flat[i]
+            
+            # 获取该店铺的数据
+            tft_store_data = tft_test_df[tft_test_df['store_id'] == store_id]
+            baseline_store_data = baseline_test_df[baseline_test_df['store_id'] == store_id]
+            
+            # 获取该店铺的WAPE
+            store_wape = store_wape_df[store_wape_df['store_id'] == store_id]['monthly_wape'].iloc[0]
+            
+            if len(tft_store_data) == 0:
+                ax.text(0.5, 0.5, f'店铺{store_id}\n无数据', ha='center', va='center', transform=ax.transAxes)
+                ax.set_title(f'店铺{store_id} WAPE（按月）：{store_wape:.4f}')
+                continue
+            
+            # 按日期聚合数据
+            tft_daily = tft_store_data.groupby('dtdate').agg({
+                'sales': 'sum',
+                'prediction': 'sum'
+            }).reset_index()
+            
+            baseline_daily = baseline_store_data.groupby('dtdate').agg({
+                'sales': 'sum',
+                'prediction': 'sum'
+            }).reset_index()
+            
+            # 绘制对比图
+            ax.plot(tft_daily['dtdate'], tft_daily['sales'], 's-', label='实际值', color='black', linewidth=1.5, markersize=3)
+            ax.plot(tft_daily['dtdate'], tft_daily['prediction'], 'o-', label='TFT预测', color='orange', linewidth=1.5, markersize=3)
+            ax.plot(baseline_daily['dtdate'], baseline_daily['prediction'], 'o-', label='Baseline预测', color='skyblue', linewidth=1.5, markersize=3)
+            
+            ax.set_title(f'店铺{store_id} WAPE（按月）：{store_wape:.4f}')
+            ax.set_xlabel('日期')
+            ax.set_ylabel('销量')
+            ax.legend(fontsize=8)
+            ax.grid(True, alpha=0.3)
+            ax.tick_params(axis='x', rotation=45, labelsize=8)
+            ax.tick_params(axis='y', labelsize=8)
+        
+        # 隐藏多余的子图
+        for i in range(len(current_stores), len(axes_flat)):
+            axes_flat[i].set_visible(False)
+        
+        plt.tight_layout()
+        save_path = f"{save_dir}/TEST集每日销量对比图-第{fig_idx+1}组.png"
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        print(f"✅ 已保存店铺对比图 {fig_idx+1}/{num_figures}: {save_path}")
+        print(f"   包含店铺: {', '.join(map(str, current_stores))}")
+    
+    print(f"🎉 所有店铺对比图生成完成，共 {num_figures} 张图")
+
 def print_evaluation_summary(baseline_results, tft_results):
     """
     打印评估结果摘要

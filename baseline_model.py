@@ -247,6 +247,11 @@ def evaluate_baseline_model(model, df, val_mask, test_mask):
         # 创建详细的预测数据DataFrame
         test_detailed_df = test_df[['store_id', 'item_id', 'sales', 'dtdate', 'prediction', 'sdeptname']].copy()
         
+        # 保存测试集预测结果到CSV文件
+        cols_to_save = ['store_id', 'item_id', 'sales', 'dtdate', 'prediction', 'sdeptname']
+        test_detailed_df[cols_to_save].to_csv('baseline_test_predictions.csv', index=False)
+        print("✅ 已保存Baseline测试集详细预测结果到 baseline_test_predictions.csv")
+        
         results['test'] = {
             # 按天指标
             'daily_wape': calculate_wape(test_daily_actual, test_daily_pred),

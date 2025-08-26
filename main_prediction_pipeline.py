@@ -18,7 +18,7 @@ warnings.filterwarnings('ignore')
 from data_analysis import load_and_analyze_data, create_data_summary_plot
 from baseline_model import BaselineModel, evaluate_baseline_model
 from tft_model import TFTModel
-from evaluation_utils import create_evaluation_visualization, print_evaluation_summary, save_evaluation_report
+from evaluation_utils import create_evaluation_visualization, print_evaluation_summary, save_evaluation_report, create_store_daily_comparison_plots
 
 class SalesPredictionPipeline:
     """销量预测自动化管道"""
@@ -102,15 +102,16 @@ class SalesPredictionPipeline:
             self.tft_model = TFTModel(
                 prediction_length=30,
                 encoder_length=90,
-                learning_rate=0.0002,
+                learning_rate=0.00008,
                 hidden_size=64,
                 attention_head_size=8,
-                dropout=0.2,
+                dropout=0.25,
                 hidden_continuous_size=32,
                 batch_size=1024,  # 减小batch_size避免NaN
                 max_epochs=30,   
                 patience=8,
-                random_seed=42
+                random_seed=42,
+                weight_decay=1e-5,  # <--- 新增此项
             )
             
             # 训练TFT模型
@@ -139,6 +140,11 @@ class SalesPredictionPipeline:
             # 创建评估可视化
             create_evaluation_visualization(
                 self.baseline_results, self.tft_results, 'evaluation_comparison.png'
+            )
+            
+            # 创建按店铺的测试集每日销量对比图
+            create_store_daily_comparison_plots(
+                self.baseline_results, self.tft_results, '.'
             )
             
             # 打印评估摘要
@@ -202,6 +208,7 @@ class SalesPredictionPipeline:
         print("\n📋 生成的主要文件:")
         print("   📊 data_summary.png - 数据概览图")
         print("   📊 evaluation_comparison.png - 模型评估对比图")
+        print("   📊 TEST集每日销量对比图-第{组号}组.png - 按店铺的测试集对比图")
         print("   📄 evaluation_report.txt - 详细评估报告")
         
         print("\n💡 项目总结:")
